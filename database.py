@@ -5,30 +5,29 @@ def connect():
 
 def init_db():
     conn = connect()
-    cur = conn.cursor()
+    c = conn.cursor()
 
-    cur.execute("""
+    c.execute("""
     CREATE TABLE IF NOT EXISTS products(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
         category TEXT,
-        keywords TEXT,
         price TEXT,
         link TEXT,
         photo TEXT,
-        priority INTEGER DEFAULT 1
+        clicks INTEGER DEFAULT 0
     )
     """)
 
-    cur.execute("""
+    c.execute("""
     CREATE TABLE IF NOT EXISTS cart(
         user_id INTEGER,
-        product TEXT,
+        name TEXT,
         price TEXT
     )
     """)
 
-    cur.execute("""
+    c.execute("""
     CREATE TABLE IF NOT EXISTS favorites(
         user_id INTEGER,
         name TEXT,
@@ -38,23 +37,9 @@ def init_db():
     )
     """)
 
-    cur.execute("""
+    c.execute("""
     CREATE TABLE IF NOT EXISTS referrals(
-        user_id INTEGER PRIMARY KEY,
-        count INTEGER DEFAULT 0
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS analytics(
-        product TEXT,
-        clicks INTEGER DEFAULT 0
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS journey(
-        step TEXT,
+        user_id INTEGER UNIQUE,
         count INTEGER DEFAULT 0
     )
     """)
@@ -63,39 +48,63 @@ def init_db():
     conn.close()
 
 # ---------- PRODUCTS ----------
-def add_product(name, category, keywords, price, link, photo):
+def add_product(name, category, price, link, photo):
     conn = connect()
     conn.execute(
-        "INSERT INTO products(name,category,keywords,price,link,photo) VALUES (?,?,?,?,?,?)",
-        (name, category, keywords, price, link, photo)
+        "INSERT INTO products(name,category,price,link,photo) VALUES (?,?,?,?,?)",
+        (name, category, price, link, photo)
     )
     conn.commit()
     conn.close()
 
-def get_by_category(cat, limit=5, offset=0):
+def edit_product(old_name, name, category, price, link):
+    conn = connect()
+    conn.execute(
+        "UPDATE products SET name=?,category=?,price=?,link=? WHERE name=?",
+        (name, category, price, link, old_name)
+    )
+    conn.commit()
+    conn.close()
+
+def delete_product(name):
+    conn = connect()
+    conn.execute("DELETE FROM products WHERE name=?", (name,))
+    conn.commit()
+    conn.close()
+
+def get_by_category(cat, limit, offset):
     conn = connect()
     rows = conn.execute(
-        "SELECT name,price,link,photo FROM products WHERE category=? ORDER BY priority DESC LIMIT ? OFFSET ?",
+        "SELECT name,price,link,photo FROM products WHERE category=? LIMIT ? OFFSET ?",
         (cat, limit, offset)
     ).fetchall()
     conn.close()
     return rows
 
-def search_products(text):
+def track_click(name):
+    conn = connect()
+    conn.execute(
+        "UPDATE products SET clicks=clicks+1 WHERE name=?",
+        (name,)
+    )
+    conn.commit()
+    conn.close()
+
+def top_products(limit=5):
     conn = connect()
     rows = conn.execute(
-        "SELECT name,price,link,photo,category FROM products WHERE keywords LIKE ?",
-        (f"%{text}%",)
+        "SELECT name,clicks FROM products ORDER BY clicks DESC LIMIT ?",
+        (limit,)
     ).fetchall()
     conn.close()
     return rows
 
 # ---------- CART ----------
-def add_cart(uid, product, price):
+def add_cart(uid, name, price):
     conn = connect()
     conn.execute(
-        "INSERT INTO cart(user_id,product,price) VALUES (?,?,?)",
-        (uid, product, price)
+        "INSERT INTO cart(user_id,name,price) VALUES (?,?,?)",
+        (uid, name, price)
     )
     conn.commit()
     conn.close()
@@ -103,7 +112,7 @@ def add_cart(uid, product, price):
 def get_cart(uid):
     conn = connect()
     rows = conn.execute(
-        "SELECT product,price FROM cart WHERE user_id=?",
+        "SELECT name,price FROM cart WHERE user_id=?",
         (uid,)
     ).fetchall()
     conn.close()
@@ -155,61 +164,14 @@ def add_referral(uid):
             "INSERT INTO referrals(user_id,count) VALUES (?,1)",
             (uid,)
         )
-
     conn.commit()
     conn.close()
 
-# ---------- ANALYTICS ----------
-def track_click(product):
-    conn = connect()
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT clicks FROM analytics WHERE product=?",
-        (product,)
-    ).fetchone()
-
-    if row:
-        cur.execute(
-            "UPDATE analytics SET clicks=clicks+1 WHERE product=?",
-            (product,)
-        )
-    else:
-        cur.execute(
-            "INSERT INTO analytics(product,clicks) VALUES (?,1)",
-            (product,)
-        )
-
-    conn.commit()
-    conn.close()
-
-def top_products(limit=5):
+def referral_leaderboard(limit=5):
     conn = connect()
     rows = conn.execute(
-        "SELECT product,clicks FROM analytics ORDER BY clicks DESC LIMIT ?",
+        "SELECT user_id,count FROM referrals ORDER BY count DESC LIMIT ?",
         (limit,)
     ).fetchall()
     conn.close()
     return rows
-
-# ---------- USER JOURNEY ----------
-def track_step(step):
-    conn = connect()
-    cur = conn.cursor()
-    row = cur.execute(
-        "SELECT count FROM journey WHERE step=?",
-        (step,)
-    ).fetchone()
-
-    if row:
-        cur.execute(
-            "UPDATE journey SET count=count+1 WHERE step=?",
-            (step,)
-        )
-    else:
-        cur.execute(
-            "INSERT INTO journey(step,count) VALUES (?,1)",
-            (step,)
-        )
-
-    conn.commit()
-    conn.close()
